@@ -48,7 +48,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import org.apache.commons.lang3.StringUtils;
+//import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
 
 /**
@@ -67,17 +67,18 @@ public class ETClient {
             "https://auth.exacttargetapis.com";
     private static final String PATH_REQUESTTOKEN =
             "/v1/requestToken";
-    private static final String PATH_OAUTH2TOKEN =
-            "/v2/token";
+    private static final String PATH_REQUESTTOKEN_LEGACY =
+            "/v1/requestToken?legacy=1";
     private static final String PATH_ENDPOINTS_SOAP =
             "/platform/v1/endpoints/soap";
-    private static final String DEFAULT_SOAP_ENDPOINT =
-            "https://webservice.exacttarget.com/Service.asmx";
 
     private ETConfiguration configuration = null;
 
     private String clientId = null;
     private String clientSecret = null;
+
+    private String username = null;
+    private String password = null;
 
     private String endpoint = null;
     private String authEndpoint = null;
@@ -94,57 +95,43 @@ public class ETClient {
     private String accessToken = null;
     private int expiresIn = 0;
     private String legacyToken = null;
-
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
-    }
-
-    public String getRefreshToken() {
-        return refreshToken;
-    }
-
     private String refreshToken = null;
 
     private long tokenExpirationTime = 0;
-    private static long soapEndpointExpiration = 0;
-    private static String fetchedSoapEndpoint = null;
-    private static final long cacheDurationInMillis = 1000 * 60 * 10; // 10 minutes
-    private boolean useOAuth2Authentication;
 
-    private String applicationType;
-    private String authorizationCode;
-    private String redirectURI;
-
-    /**
-     * Class constructor, Initializes a new instance of the class.
-     */
+    /** 
+    * Class constructor, Initializes a new instance of the class.
+    */
     public ETClient()
-            throws ETSdkException
+        throws ETSdkException
     {
         this(DEFAULT_PROPERTIES_FILE_NAME);
     }
 
-    /**
-     * Class constructor, Initializes a new instance of the class.
-     * @param   file  The configuration file which contains the clientId and clientSecret
-     */
+    /** 
+    * Class constructor, Initializes a new instance of the class.
+    * @param   file  The configuration file which contains the clientId and clientSecret
+    */
     public ETClient(String file)
-            throws ETSdkException
+        throws ETSdkException
     {
         this(new ETConfiguration(file));
     }
 
-    /**
-     * Class constructor, Initializes a new instance of the class.
-     * @param configuration      The ETConfiguration object which contains the clientId and clientSecret
-     */
+    /** 
+    * Class constructor, Initializes a new instance of the class.
+    * @param configuration      The ETConfiguration object which contains the clientId and clientSecret
+    */
     public ETClient(ETConfiguration configuration)
-            throws ETSdkException
+        throws ETSdkException
     {
         this.configuration = configuration;
 
         clientId = configuration.get("clientId");
         clientSecret = configuration.get("clientSecret");
+
+        username = configuration.get("username");
+        password = configuration.get("password");
 
         endpoint = configuration.get("endpoint");
         if (endpoint == null) {
@@ -157,44 +144,43 @@ public class ETClient {
         soapEndpoint = configuration.get("soapEndpoint");
 
         GsonBuilder gsonBuilder = new GsonBuilder()
-                .excludeFieldsWithoutExposeAnnotation()
-                .setDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+            .excludeFieldsWithoutExposeAnnotation()
+            .setDateFormat("yyyy-MM-dd'T'HH:mm:ss");
         if (logger.isDebugEnabled()) {
             gson = gsonBuilder.setPrettyPrinting().create();
         } else {
             gson = gsonBuilder.create();
         }
 
-        useOAuth2Authentication = configuration.isTrue("useOAuth2Authentication");
+        if (clientId != null && clientSecret != null) {
+            authConnection = new ETRestConnection(this, authEndpoint, true);
+            requestToken();
+            restConnection = new ETRestConnection(this, endpoint);
+            if (soapEndpoint == null) {
+                //
+                // If a SOAP endpoint isn't specified automatically determine it:
+                //
 
-        applicationType = configuration.get("applicationType");
-        authorizationCode = configuration.get("authorizationCode");
-        redirectURI = configuration.get("redirectURI");
-
-        if(isNullOrBlankOrEmpty(applicationType)){
-            applicationType = "server";
-            configuration.set("applicationType", "server");
-        }
-
-        if(applicationType.equals("public") || applicationType.equals("web")){
-            if (isNullOrBlankOrEmpty(authorizationCode) || isNullOrBlankOrEmpty(redirectURI)){
-                throw new ETSdkException("AuthorizationCode or RedirectURI is null: For Public/Web Apps, " +
-                        "authorizationCode and redirectURI must be provided in config file");
+                ETRestConnection.Response response = restConnection.get(PATH_ENDPOINTS_SOAP);
+                String responsePayload = response.getResponsePayload();
+                JsonParser jsonParser = new JsonParser();
+                JsonObject jsonObject = jsonParser.parse(responsePayload).getAsJsonObject();
+                soapEndpoint = jsonObject.get("url").getAsString();
             }
-        }
-
-        if(applicationType.equals("public")){
-            if(isNullOrBlankOrEmpty(clientId)){
-                throw new ETSdkException("ClientId is null: clientId must be provided in config file");
+            soapConnection = new ETSoapConnection(this, soapEndpoint, accessToken);
+        } else {
+            if (username == null || password == null) {
+                throw new ETSdkException("must specify either " +
+                        "clientId/clientSecret or username/password");
             }
-        }
-        else{
-            if(isNullOrBlankOrEmpty(clientId) || isNullOrBlankOrEmpty(clientSecret)){
-                throw new ETSdkException("ClientId or ClientSecret is null: clientId and clientSecret must be provided in config file");
+            if (soapEndpoint == null) {
+                throw new ETSdkException("must specify soapEndpoint " +
+                        "when authenticating with username/password");
             }
+            soapConnection = new ETSoapConnection(this, soapEndpoint,
+                                                  username,
+                                                  password);
         }
-
-        buildClients();
 
         if (configuration.isFalse("autoHydrateObjects")) {
             autoHydrateObjects = false;
@@ -204,6 +190,8 @@ public class ETClient {
             logger.trace("ETClient initialized:");
             logger.trace("  clientId = " + clientId);
             logger.trace("  clientSecret = *");
+            logger.trace("  username = " + username);
+            logger.trace("  password = *");
             logger.trace("  endpoint = " + endpoint);
             logger.trace("  authEndpoint = " + authEndpoint);
             logger.trace("  soapEndpoint = " + soapEndpoint);
@@ -211,53 +199,8 @@ public class ETClient {
         }
     }
 
-    private void buildClients() throws ETSdkException {
-        authConnection = new ETRestConnection(this, authEndpoint, true);
-        requestToken();
-        restConnection = new ETRestConnection(this, endpoint);
-        fetchSoapEndpoint();
-        soapConnection = new ETSoapConnection(this, soapEndpoint, accessToken);
-    }
-
-    public static boolean isNullOrBlankOrEmpty(String str) {
-        return str == null || StringUtils.isBlank(str) || StringUtils.isEmpty(str);
-    }
-
-    private void fetchSoapEndpoint() {
-        if(useOAuth2Authentication) {
-            return;
-        }
-
-        if (soapEndpoint == null || soapEndpoint.equals("")) {
-            //
-            // If a SOAP endpoint isn't specified automatically determine it:
-            //
-            try {
-                if(System.currentTimeMillis() > soapEndpointExpiration || fetchedSoapEndpoint == null) {
-                    ETRestConnection.Response response = restConnection.get(PATH_ENDPOINTS_SOAP);
-                    if (response.getResponseCode() == 200) {
-                        String responsePayload = response.getResponsePayload();
-                        JsonParser jsonParser = new JsonParser();
-                        JsonObject jsonObject = jsonParser.parse(responsePayload).getAsJsonObject();
-                        soapEndpoint = jsonObject.get("url").getAsString();
-                        fetchedSoapEndpoint = soapEndpoint;
-                        soapEndpointExpiration = System.currentTimeMillis() + cacheDurationInMillis;
-                    } else {
-                        soapEndpoint = DEFAULT_SOAP_ENDPOINT;
-                    }
-                }
-                else {
-                    soapEndpoint = fetchedSoapEndpoint;
-                }
-            }
-            catch(ETSdkException ex) {
-                soapEndpoint = DEFAULT_SOAP_ENDPOINT;
-            }
-        }
-    }
-
     /**
-     *
+     * 
      * @return The client ID
      */
     public String getClientId() {
@@ -265,15 +208,15 @@ public class ETClient {
     }
 
     /**
-     *
-     * @return The access token
+     * 
+     * @return The access token 
      */
     public String getAccessToken() {
         return accessToken;
     }
 
     /**
-     *
+     * 
      * @return The LegacyToken
      */
     public String getLegacyToken() {
@@ -281,7 +224,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return true if auto hydrate objects, false otherwise
      */
     public Boolean autoHydrateObjects() {
@@ -289,7 +232,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return      The ETConfiguration
      */
     public ETConfiguration getConfiguration() {
@@ -297,7 +240,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return      The Gson
      */
     public Gson getGson() {
@@ -305,7 +248,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return      The ETRestConnection
      */
     public ETRestConnection getRestConnection() {
@@ -313,7 +256,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return      The ETSoapConnection
      */
     public ETSoapConnection getSoapConnection() {
@@ -344,89 +287,19 @@ public class ETClient {
      * @return                      The request token
      */
     public synchronized String requestToken()
-            throws ETSdkException
+        throws ETSdkException
     {
         return requestToken(null);
     }
 
-    private synchronized String requestOAuth2Token()
-            throws ETSdkException
-    {
-        JsonObject payload = createPayload(configuration);
-        ETRestConnection.Response response = authConnection.post(PATH_OAUTH2TOKEN, gson.toJson(payload));
-
-        if (response.getResponseCode() != HttpURLConnection.HTTP_OK) {
-            throw new ETSdkException("error obtaining OAuth2 access token "
-                    + "("
-                    + response.getResponseCode()
-                    + " "
-                    + response.getResponseMessage()
-                    + ")");
-        }
-        JsonParser jsonParser = new JsonParser();
-
-        String responsePayload = response.getResponsePayload();
-        JsonObject jsonObject = jsonParser.parse(responsePayload).getAsJsonObject();
-
-        this.accessToken = jsonObject.get("access_token").getAsString();
-        this.endpoint = jsonObject.get("rest_instance_url").getAsString();
-        this.soapEndpoint = jsonObject.get("soap_instance_url").getAsString() + "service.asmx";
-
-        this.expiresIn = jsonObject.get("expires_in").getAsInt();
-        tokenExpirationTime = System.currentTimeMillis() + (expiresIn * 1000);
-
-        if(jsonObject.has("refresh_token")){
-            this.refreshToken = jsonObject.get("refresh_token").getAsString();
-        }
-
-        return accessToken;
-    }
-
-    JsonObject createPayload(ETConfiguration configuration) {
-        JsonObject payload = new JsonObject();
-
-        payload.addProperty("client_id", configuration.get("clientId"));
-
-        String applicationType = configuration.get("applicationType");
-
-        if(applicationType.equals("web") || applicationType.equals("server")){
-            payload.addProperty("client_secret", configuration.get("clientSecret"));
-        }
-        if(!isNullOrBlankOrEmpty(refreshToken)){
-            payload.addProperty("grant_type", "refresh_token");
-            payload.addProperty("refresh_token", refreshToken);
-        }
-        else if(applicationType.equals("public") || applicationType.equals("web")){
-            payload.addProperty("grant_type", "authorization_code");
-            payload.addProperty("code", configuration.get("authorizationCode"));
-            payload.addProperty("redirect_uri", configuration.get("redirectURI"));
-        }
-        else{
-            payload.addProperty("grant_type", "client_credentials");
-        }
-
-        if(!isNullOrBlankOrEmpty(configuration.get("accountId"))){
-            payload.addProperty("account_id", configuration.get("accountId"));
-        }
-        if(!isNullOrBlankOrEmpty(configuration.get("scope"))){
-            payload.addProperty("scope", configuration.get("scope"));
-        }
-
-        return payload;
-    }
-
     /**
-     *
+     * 
      * @param refreshToken          The refresh token
      * @return                      The request token
      */
     public synchronized String requestToken(String refreshToken)
-            throws ETSdkException
+        throws ETSdkException
     {
-        if(useOAuth2Authentication){
-            return requestOAuth2Token();
-        }
-
         if (clientId == null || clientSecret == null) {
             // no-op
             return null;
@@ -445,22 +318,25 @@ public class ETClient {
         jsonObject.addProperty("clientSecret", clientSecret);
         jsonObject.addProperty("accessType", (configuration.get("accessType") != null ? configuration.get("accessType") :"online"));
         if (configuration.get("accessType") != null && configuration.get("accessType").equals("offline") && refreshToken != null){
-            jsonObject.addProperty("refreshToken", refreshToken);
+        	jsonObject.addProperty("refreshToken", refreshToken);
         }
 
         String requestPayload = gson.toJson(jsonObject);
 
         ETRestConnection.Response response = null;
-
-        response = authConnection.post(PATH_REQUESTTOKEN, requestPayload);
+        if (configuration.isTrue("requestLegacyToken")) {
+            response = authConnection.post(PATH_REQUESTTOKEN_LEGACY, requestPayload);
+        } else {
+            response = authConnection.post(PATH_REQUESTTOKEN, requestPayload);
+        }
 
         if (response.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new ETSdkException("error obtaining access token "
-                    + "("
-                    + response.getResponseCode()
-                    + " "
-                    + response.getResponseMessage()
-                    + ")");
+                                     + "("
+                                     + response.getResponseCode()
+                                     + " "
+                                     + response.getResponseMessage()
+                                     + ")");
         }
 
         //
@@ -483,9 +359,9 @@ public class ETClient {
         }
         logger.debug("  legacyToken: " + this.legacyToken);
         if (jsonObject.get("refreshToken") != null){
-            this.refreshToken = jsonObject.get("refreshToken").getAsString();
+        	this.refreshToken = jsonObject.get("refreshToken").getAsString();
         }
-
+        
         logger.debug("  refreshToken: " + this.refreshToken);
 
         //
@@ -502,11 +378,11 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @return      The refresh token
      */
     public synchronized String refreshToken()
-            throws ETSdkException
+        throws ETSdkException
     {
         if (tokenExpirationTime > 0) {
             logger.debug("access token expires at " + new Date(tokenExpirationTime));
@@ -524,25 +400,27 @@ public class ETClient {
             }
 
             logger.debug("refreshing access token...");
+
+            if (refreshToken == null) {
+                throw new ETSdkException("refreshToken == null");
+            }
         }
 
         requestToken(refreshToken);
 
-        if(soapConnection != null) {
-            soapConnection.setAccessToken(accessToken);
-        }
+        soapConnection.setAccessToken(accessToken);
 
         return accessToken;
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to instantiate
      * @return              The type T which extends from ETApiObject
      */
     public <T extends ETApiObject> T instantiate(Class <T> type)
-            throws ETSdkException
+        throws ETSdkException
     {
         T object = null;
         try {
@@ -556,7 +434,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The ETFilter object to be used to retrieve objects
@@ -564,13 +442,13 @@ public class ETClient {
      */
     public <T extends ETApiObject> ETResponse<T> retrieve(Class<T> type,
                                                           ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         return retrieve(type, null, null, filter);
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The filter to be used to retrieve as variable arguments of String
@@ -578,13 +456,13 @@ public class ETClient {
      */
     public <T extends ETApiObject> ETResponse<T> retrieve(Class<T> type,
                                                           String... filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         return retrieve(type, null, null, ETFilter.parse(filter));
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param page          The page number
@@ -597,7 +475,7 @@ public class ETClient {
                                                           Integer page,
                                                           Integer pageSize,
                                                           ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         //
         // Find the retrieve method:
@@ -607,11 +485,11 @@ public class ETClient {
         for (Class<T> t = type; t != null; t = (Class<T>) t.getSuperclass()) {
             try {
                 retrieve = t.getDeclaredMethod("retrieve",
-                        ETClient.class,  // client
-                        Class.class,     // type
-                        Integer.class,   // page
-                        Integer.class,   // pageSize
-                        ETFilter.class); // filter
+                                               ETClient.class,  // client
+                                               Class.class,     // type
+                                               Integer.class,   // page
+                                               Integer.class,   // pageSize
+                                               ETFilter.class); // filter
                 if (retrieve != null) {
                     break;
                 }
@@ -628,11 +506,11 @@ public class ETClient {
         try {
             // first argument of null means method is static
             response = (ETResponse<T>) retrieve.invoke(null,
-                    this,
-                    type,
-                    page,
-                    pageSize,
-                    filter);
+                                                       this,
+                                                       type,
+                                                       page,
+                                                       pageSize,
+                                                       filter);
         } catch (Exception ex) {
             throw new ETSdkException("error invoking retrieve method for type " + type, ex);
         }
@@ -641,7 +519,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param page          The page number
@@ -653,7 +531,7 @@ public class ETClient {
                                                           Integer page,
                                                           Integer pageSize,
                                                           String... filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         return retrieve(type, page, pageSize, ETFilter.parse(filter));
     }
@@ -666,7 +544,7 @@ public class ETClient {
     public <T extends ETApiObject> ETResponse<T> retrieve(Class<T> type,
                                                           ETFilter filter,
                                                           String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         // make a copy so we're not modifying argument itself
         ETFilter f = new ETFilter();
@@ -687,7 +565,7 @@ public class ETClient {
                                                           Integer page,
                                                           Integer pageSize,
                                                           String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         // make a copy so we're not modifying argument itself
         ETFilter f = new ETFilter();
@@ -708,7 +586,7 @@ public class ETClient {
                                                           Integer page,
                                                           Integer pageSize,
                                                           String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         // make a copy so we're not modifying argument itself
         ETFilter f = new ETFilter();
@@ -720,7 +598,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The ETFilter object to be used to retrieve objects
@@ -728,7 +606,7 @@ public class ETClient {
      */
     public <T extends ETApiObject> T retrieveObject(Class<T> type,
                                                     ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter);
         if (response == null) {
@@ -738,7 +616,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The filter to be used to retrieve objects as variable arguments of String
@@ -746,7 +624,7 @@ public class ETClient {
      */
     public <T extends ETApiObject> T retrieveObject(Class<T> type,
                                                     String... filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter);
         if (response == null) {
@@ -763,7 +641,7 @@ public class ETClient {
     public <T extends ETApiObject> T retrieveObject(Class<T> type,
                                                     ETFilter filter,
                                                     String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter, properties);
         if (response == null) {
@@ -773,7 +651,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The ETFilter object to be used to retrieve objects
@@ -781,7 +659,7 @@ public class ETClient {
      */
     public <T extends ETApiObject> List<T> retrieveObjects(Class<T> type,
                                                            ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter);
         if (response == null) {
@@ -791,7 +669,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param filter        The filter to be used to retrieve objects as variable arguments of String
@@ -799,7 +677,7 @@ public class ETClient {
      */
     public <T extends ETApiObject> List<T> retrieveObjects(Class<T> type,
                                                            String... filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter);
         if (response == null) {
@@ -809,7 +687,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param page          The page number
@@ -821,7 +699,7 @@ public class ETClient {
                                                            Integer page,
                                                            Integer pageSize,
                                                            ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, page, pageSize, filter);
         if (response == null) {
@@ -831,7 +709,7 @@ public class ETClient {
     }
 
     /**
-     *
+     * 
      * @param <T>           The type which extends from ETApiObject
      * @param type          The class type to retrieve
      * @param page          The page number
@@ -843,7 +721,7 @@ public class ETClient {
                                                            Integer page,
                                                            Integer pageSize,
                                                            String... filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, page, pageSize, filter);
         if (response == null) {
@@ -860,7 +738,7 @@ public class ETClient {
     public <T extends ETApiObject> List<T> retrieveObjects(Class<T> type,
                                                            ETFilter filter,
                                                            String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter, properties);
         if (response == null) {
@@ -879,7 +757,7 @@ public class ETClient {
                                                            Integer page,
                                                            Integer pageSize,
                                                            String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter, page, pageSize, properties);
         if (response == null) {
@@ -898,7 +776,7 @@ public class ETClient {
                                                            Integer page,
                                                            Integer pageSize,
                                                            String... properties)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETResponse<T> response = retrieve(type, filter, page, pageSize, properties);
         if (response == null) {
@@ -913,7 +791,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> create(T... objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("create", Arrays.asList(objects));
     }
@@ -924,7 +802,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> create(List<T> objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("create", objects);
     }
@@ -935,7 +813,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> update(T... objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("update", Arrays.asList(objects));
     }
@@ -946,7 +824,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> update(List<T> objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("update", objects);
     }
@@ -957,7 +835,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> delete(T... objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("delete", Arrays.asList(objects));
     }
@@ -968,7 +846,7 @@ public class ETClient {
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
     public <T extends ETApiObject> ETResponse<T> delete(List<T> objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         return createUpdateDelete("delete", objects);
     }
@@ -977,13 +855,13 @@ public class ETClient {
      * @param <T>                   The type which extends from ETApiObject
      * @param type                  The class type to delete
      * @param filter                The filter to be used to do filter
-     * @param values                The values as variable arguments of String which is used to do the update
+     * @param values                The values as variable arguments of String which is used to do the update 
      * @return                      The ETResponse object of type T which extends from ETApiObject
      */
-    public <T extends ETApiObject> ETResponse<T> update(Class<T> type,
+     public <T extends ETApiObject> ETResponse<T> update(Class<T> type,
                                                         String filter,
                                                         String... values)
-            throws ETSdkException
+        throws ETSdkException
     {
         // XXX optimize
 
@@ -1025,11 +903,11 @@ public class ETClient {
      */
     public <T extends ETApiObject> ETResponse<T> delete(Class<T> type,
                                                         ETFilter filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         ETExpression expression = filter.getExpression();
         if (expression.getOperator() == ETExpression.Operator.EQUALS &&
-                expression.getProperty().equals("id"))
+            expression.getProperty().equals("id"))
         {
             //
             // Optimization: If we're simply deleting a single
@@ -1061,7 +939,7 @@ public class ETClient {
      */
     public <T extends ETApiObject> ETResponse<T> delete(Class<T> type,
                                                         String filter)
-            throws ETSdkException
+        throws ETSdkException
     {
         return delete(type, ETFilter.parse(filter));
     }
@@ -1069,7 +947,7 @@ public class ETClient {
     @SuppressWarnings("unchecked")
     private <T extends ETApiObject> ETResponse<T> createUpdateDelete(String method,
                                                                      List<T> objects)
-            throws ETSdkException
+        throws ETSdkException
     {
         Class<T> type = (Class<T>) objects.get(0).getClass();
 
