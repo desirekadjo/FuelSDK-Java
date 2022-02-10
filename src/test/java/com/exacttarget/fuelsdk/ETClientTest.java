@@ -195,128 +195,128 @@ public class ETClientTest {
         }
     }
 
-    @Test
-    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsNullPointer(){
-
-        String nullPointer = null;
-        assertTrue(ETClient.isNullOrBlankOrEmpty(nullPointer));
-    }
-
-    @Test
-    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsBlankString(){
-
-        String blankString = "    ";
-        assertTrue(ETClient.isNullOrBlankOrEmpty(blankString));
-    }
-
-    @Test
-    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsEmptyString(){
-
-        String emptyString = "";
-        assertTrue(ETClient.isNullOrBlankOrEmpty(emptyString));
-    }
-
-    @Test
-    public void isNullOrBlankOrEmpty_shouldReturnFalse_whenInputIsNotNullOrBlankOrEmptyString(){
-
-        String notNullOrBlankOrEmptyString = "NotNullOrBlankOrEmptyString";
-        assertFalse(ETClient.isNullOrBlankOrEmpty(notNullOrBlankOrEmptyString));
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithPublicAppAttributes_whenApplicationTypeIsPublic(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        configuration.set("applicationType", "public");
-        configuration.set("redirectURI", "redirectURI");
-        configuration.set("authorizationCode", "authorizationCode");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
-        assertEquals(configuration.get("redirectURI"), payload.get("redirect_uri").getAsString());
-        assertEquals(configuration.get("authorizationCode"), payload.get("code").getAsString());
-        assertEquals("authorization_code", payload.get("grant_type").getAsString());
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithNoClientSecret_whenApplicationTypeIsPublic(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        configuration.set("applicationType", "public");
-        configuration.set("redirectURI", "redirectURI");
-        configuration.set("authorizationCode", "authorizationCode");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertNull(payload.get("client_secret"));
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithWebAppAttributes_whenApplicationTypeIsWeb(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        configuration.set("applicationType", "web");
-        configuration.set("redirectURI", "redirectURI");
-        configuration.set("authorizationCode", "authorizationCode");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
-        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
-        assertEquals(configuration.get("redirectURI"), payload.get("redirect_uri").getAsString());
-        assertEquals(configuration.get("authorizationCode"), payload.get("code").getAsString());
-        assertEquals("authorization_code", payload.get("grant_type").getAsString());
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithServerAppAttributes_whenApplicationTypeIsServer(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        configuration.set("applicationType", "server");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
-        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
-        assertEquals("client_credentials", payload.get("grant_type").getAsString());
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithServerAppAttributes_whenApplicationTypeIsNotPassedInConfig(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
-        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
-        assertEquals("client_credentials", payload.get("grant_type").getAsString());
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithNoRedirectURIandAuthCode_whenApplicationTypeIsServer(){
-        ETConfiguration configuration = client.getConfiguration();
-
-        configuration.set("applicationType", "server");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertNull(payload.get("redirect_uri"));
-        assertNull(payload.get("code"));
-    }
-
-    @Test
-    public void createPayload_shouldReturnPayloadWithRefreshToken_whenClientHasRefreshToken() throws ETSdkException {
-        ETClient client = new ETClient("fuelsdk.properties");
-        ETConfiguration configuration = client.getConfiguration();
-
-        client.setRefreshToken("refreshToken");
-
-        JsonObject payload = client.createPayload(configuration);
-
-        assertEquals(client.getRefreshToken(), payload.get("refresh_token").getAsString());
-        assertEquals("refresh_token", payload.get("grant_type").getAsString());
-    }
+//    @Test
+//    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsNullPointer(){
+//
+//        String nullPointer = null;
+//        assertTrue(ETClient.isNullOrBlankOrEmpty(nullPointer));
+//    }
+//
+//    @Test
+//    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsBlankString(){
+//
+//        String blankString = "    ";
+//        assertTrue(ETClient.isNullOrBlankOrEmpty(blankString));
+//    }
+//
+//    @Test
+//    public void isNullOrBlankOrEmpty_shouldReturnTrue_whenInputIsEmptyString(){
+//
+//        String emptyString = "";
+//        assertTrue(ETClient.isNullOrBlankOrEmpty(emptyString));
+//    }
+//
+//    @Test
+//    public void isNullOrBlankOrEmpty_shouldReturnFalse_whenInputIsNotNullOrBlankOrEmptyString(){
+//
+//        String notNullOrBlankOrEmptyString = "NotNullOrBlankOrEmptyString";
+//        assertFalse(ETClient.isNullOrBlankOrEmpty(notNullOrBlankOrEmptyString));
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithPublicAppAttributes_whenApplicationTypeIsPublic(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        configuration.set("applicationType", "public");
+//        configuration.set("redirectURI", "redirectURI");
+//        configuration.set("authorizationCode", "authorizationCode");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
+//        assertEquals(configuration.get("redirectURI"), payload.get("redirect_uri").getAsString());
+//        assertEquals(configuration.get("authorizationCode"), payload.get("code").getAsString());
+//        assertEquals("authorization_code", payload.get("grant_type").getAsString());
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithNoClientSecret_whenApplicationTypeIsPublic(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        configuration.set("applicationType", "public");
+//        configuration.set("redirectURI", "redirectURI");
+//        configuration.set("authorizationCode", "authorizationCode");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertNull(payload.get("client_secret"));
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithWebAppAttributes_whenApplicationTypeIsWeb(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        configuration.set("applicationType", "web");
+//        configuration.set("redirectURI", "redirectURI");
+//        configuration.set("authorizationCode", "authorizationCode");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
+//        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
+//        assertEquals(configuration.get("redirectURI"), payload.get("redirect_uri").getAsString());
+//        assertEquals(configuration.get("authorizationCode"), payload.get("code").getAsString());
+//        assertEquals("authorization_code", payload.get("grant_type").getAsString());
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithServerAppAttributes_whenApplicationTypeIsServer(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        configuration.set("applicationType", "server");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
+//        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
+//        assertEquals("client_credentials", payload.get("grant_type").getAsString());
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithServerAppAttributes_whenApplicationTypeIsNotPassedInConfig(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertEquals(configuration.get("clientId"), payload.get("client_id").getAsString());
+//        assertEquals(configuration.get("clientSecret"), payload.get("client_secret").getAsString());
+//        assertEquals("client_credentials", payload.get("grant_type").getAsString());
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithNoRedirectURIandAuthCode_whenApplicationTypeIsServer(){
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        configuration.set("applicationType", "server");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertNull(payload.get("redirect_uri"));
+//        assertNull(payload.get("code"));
+//    }
+//
+//    @Test
+//    public void createPayload_shouldReturnPayloadWithRefreshToken_whenClientHasRefreshToken() throws ETSdkException {
+//        ETClient client = new ETClient("fuelsdk.properties");
+//        ETConfiguration configuration = client.getConfiguration();
+//
+//        client.setRefreshToken("refreshToken");
+//
+//        JsonObject payload = client.createPayload(configuration);
+//
+//        assertEquals(client.getRefreshToken(), payload.get("refresh_token").getAsString());
+//        assertEquals("refresh_token", payload.get("grant_type").getAsString());
+//    }
 
     private String getFetchedSoapEndpoint(ETClient client) throws NoSuchFieldException, IllegalAccessException {
         Field field = client.getClass().getDeclaredField("fetchedSoapEndpoint");
